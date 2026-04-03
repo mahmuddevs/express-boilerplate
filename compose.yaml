@@ -1,0 +1,11 @@
+services:
+  express-boilerplate:
+    build: .
+    ports:
+      - 3000:3000
+    env_file:
+      - .env
+    volumes:
+      - .:/express-boilerplate
+      - /express-boilerplate/node_modules
+    command: bun dev

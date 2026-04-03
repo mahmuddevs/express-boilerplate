@@ -1,0 +1,14 @@
+dist
+node_modules
+.env
+.git
+
+
+# docker run \
+#  -e NODE_ENV=development \
+#  -e PORT=3000 \
+#  -e DATABASE_URL=postgresql://user:password@localhost:5432/mydb \
+#  -e JWT_SECRET=1903a055d54446aab887cc18c106765f \
+#  -e TOKEN_EXPIRATION=7d \
+#  -p 3000:3000 \
+#  express-boilerplate:1.0 \
