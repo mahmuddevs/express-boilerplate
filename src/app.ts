@@ -1,9 +1,11 @@
 import express from "express";
+import type { NextFunction, Request, Response } from "express";
 import morgan from "morgan";
 import cors from "cors";
+import cookieParser from "cookie-parser";
 import { logger } from "./app/utils/logger.js";
 import { response } from "./app/utils/apiResponse.js";
-import router from "./app/routes/index.js";
+import router from "./app/routes/routes.js";
 
 const app = express();
 
@@ -20,6 +22,8 @@ app.use(
 );
 // Parse JSON bodies
 app.use(express.json());
+// Parse cookies
+app.use(cookieParser());
 // Morgan logging
 const morganStream = {
   write: (message: string) => logger.info(message.trim()),
@@ -38,7 +42,7 @@ app.use("/api", router);
 // -----------------------------
 // Global error handler
 // -----------------------------
-app.use((err: any, req: any, res: any, next: any) => {
+app.use((err: any, req: Request, res: Response, next: NextFunction) => {
   response.error(res, { message: err.message || "Internal Server Error" });
 });
 

@@ -1,6 +1,7 @@
 services:
   express-boilerplate:
     build: .
+    image: express-boilerplate:1.0
     ports:
       - 3000:3000
     env_file:
