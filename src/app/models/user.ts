@@ -1,16 +1,16 @@
 import { Schema, model } from "mongoose";
-import { Roles } from "../constants/roles.js";
 import { hashData } from "../utils/hashUtils.js";
 
 export interface IUser {
   firstName: string;
   lastName: string;
   email: string;
-  password: string;
-  role: Roles;
+  password?: string;
+  authProvider: "local" | "google";
+  googleId?: string;
 }
 
-const UserSchema = new Schema(
+const UserSchema = new Schema<IUser>(
   {
     firstName: {
       type: String,
@@ -29,15 +29,25 @@ const UserSchema = new Schema(
       lowercase: true,
       trim: true,
     },
-    password: {
+    authProvider: {
       type: String,
+      enum: ["local", "google"],
+      default: "local",
       required: true,
     },
-    role: {
+    password: {
       type: String,
-      enum: Object.values(Roles),
-      default: Roles.STUDENT,
-      required: true,
+      required: function (this: any) {
+        return this.authProvider === "local";
+      },
+    },
+    googleId: {
+      type: String,
+      sparse: true,
+      unique: true,
+      required: function (this: any) {
+        return this.authProvider === "google";
+      },
     },
   },
   {
@@ -46,10 +56,9 @@ const UserSchema = new Schema(
 );
 
 UserSchema.pre("save", async function () {
-  if (!this.isModified("password")) {
+  if (!this.password || !this.isModified("password")) {
     return;
   }
   this.password = await hashData(this.password);
 });
-
-export const User = model("User", UserSchema);
+export const User = model<IUser>("User", UserSchema);

@@ -4,8 +4,13 @@ import { response } from "../utils/apiResponse.js";
 import { AuthService } from "../services/auth.services.js";
 import { compareHash } from "../utils/hashUtils.js";
 import { generateToken, verifyToken } from "../utils/jwtUtils.js";
+import { decodeJwt } from "jose";
 import { env } from "../config/env.js";
 import { RefreshToken } from "../models/refresh-token.js";
+import { OAuth2Client } from "google-auth-library";
+
+
+const client = new OAuth2Client(env.googleClientId);
 
 const login = async (req: Request, res: Response) => {
   const { email, password } = req.body;
@@ -16,6 +21,13 @@ const login = async (req: Request, res: Response) => {
       return response.error(res, {
         message: "No user exists with this email",
         statusCode: 404,
+      });
+    }
+
+    if (!user.password) {
+      return response.error(res, {
+        message: "This account uses social login or does not have a password set.",
+        statusCode: 400,
       });
     }
 
@@ -30,8 +42,7 @@ const login = async (req: Request, res: Response) => {
     const accessToken = await generateToken(
       {
         id: user._id.toString(),
-        email: user.email,
-        role: user.role,
+        email: user.email
       },
       env.accessTokenSecret,
       env.accessTokenExpiration
@@ -40,8 +51,7 @@ const login = async (req: Request, res: Response) => {
     const refreshToken = await generateToken(
       {
         id: user._id.toString(),
-        email: user.email,
-        role: user.role,
+        email: user.email
       },
       env.refreshTokenSecret,
       env.refreshTokenExpiration
@@ -94,8 +104,7 @@ const register = async (req: Request, res: Response) => {
     const accessToken = await generateToken(
       {
         id: user._id.toString(),
-        email: user.email,
-        role: user.role,
+        email: user.email
       },
       env.accessTokenSecret,
       env.accessTokenExpiration
@@ -104,8 +113,7 @@ const register = async (req: Request, res: Response) => {
     const refreshToken = await generateToken(
       {
         id: user._id.toString(),
-        email: user.email,
-        role: user.role,
+        email: user.email
       },
       env.refreshTokenSecret,
       env.refreshTokenExpiration
@@ -156,10 +164,14 @@ const verifyAuth = async (req: Request, res: Response) => {
   try {
     const payload = await verifyToken(accessToken, env.accessTokenSecret);
 
-    const activeSession = await RefreshToken.findOne({
-      userId: payload.id,
-      refreshToken
-    })
+    const sessions = await RefreshToken.find({ userId: payload.id });
+    let activeSession = null;
+    for (const session of sessions) {
+      if (await compareHash(refreshToken, session.refreshToken)) {
+        activeSession = session;
+        break;
+      }
+    }
 
     if (!activeSession) {
       return response.error(res, {
@@ -203,7 +215,21 @@ const logout = async (req: Request, res: Response) => {
   }
 
   try {
-    await RefreshToken.deleteOne({ refreshToken });
+    try {
+      const payload = decodeJwt(refreshToken);
+      const userId = payload.id;
+      if (userId) {
+        const sessions = await RefreshToken.find({ userId });
+        for (const session of sessions) {
+          if (await compareHash(refreshToken, session.refreshToken)) {
+            await RefreshToken.deleteOne({ _id: session._id });
+            break;
+          }
+        }
+      }
+    } catch {
+      // Ignore if decoding fails
+    }
 
     return response.success(res, {
       message: "Logged out successfully",
@@ -228,7 +254,15 @@ const refreshAccessToken = async (req: Request, res: Response) => {
 
   try {
     const payload = await verifyToken(refreshToken, env.refreshTokenSecret);
-    const session = await RefreshToken.findOne({ userId: payload.id, refreshToken });
+    const sessions = await RefreshToken.find({ userId: payload.id });
+    
+    let session = null;
+    for (const s of sessions) {
+      if (await compareHash(refreshToken, s.refreshToken)) {
+        session = s;
+        break;
+      }
+    }
 
     if (!session) throw new Error("Revoked");
 
@@ -247,7 +281,7 @@ const refreshAccessToken = async (req: Request, res: Response) => {
     }
 
     const newAccessToken = await generateToken(
-      { id: payload.id, email: payload.email, role: payload.role },
+      { id: payload.id, email: payload.email },
       env.accessTokenSecret,
       env.accessTokenExpiration
     );
@@ -271,4 +305,106 @@ const refreshAccessToken = async (req: Request, res: Response) => {
   }
 };
 
-export { login, register, verifyAuth, logout, refreshAccessToken };
+const googleLogin = async (req: Request, res: Response) => {
+  const { idToken } = req.body;
+
+  if (!idToken) {
+    return response.error(res, {
+      message: "Google ID Token is required.",
+      statusCode: 400,
+    });
+  }
+
+  try {
+    if (!env.googleClientId) {
+      return response.error(res, {
+        message: "Google OAuth client ID is not configured on the server.",
+        statusCode: 500,
+      });
+    }
+
+    const ticket = await client.verifyIdToken({
+      idToken,
+      audience: env.googleClientId,
+    });
+
+    const payload = ticket.getPayload();
+
+    if (!payload || !payload.email) {
+      return response.error(res, {
+        message: "Invalid token payload from Google.",
+        statusCode: 400,
+      });
+    }
+
+    const { sub: googleId, email, given_name, family_name, name } = payload;
+
+    let user = await AuthService.findUserByEmail(email);
+
+    if (user) {
+      if (user.authProvider === "local" || !user.googleId) {
+        user.googleId = googleId;
+        user.authProvider = "google";
+        await user.save();
+      }
+    } else {
+      user = await User.create({
+        firstName: given_name || name || "Google",
+        lastName: family_name || "User",
+        email: email,
+        authProvider: "google",
+        googleId: googleId,
+      });
+    }
+
+    const accessToken = await generateToken(
+      {
+        id: user._id.toString(),
+        email: user.email,
+      },
+      env.accessTokenSecret,
+      env.accessTokenExpiration
+    );
+
+    const refreshToken = await generateToken(
+      {
+        id: user._id.toString(),
+        email: user.email,
+      },
+      env.refreshTokenSecret,
+      env.refreshTokenExpiration
+    );
+
+    await RefreshToken.create({
+      userId: user._id,
+      refreshToken,
+    });
+
+    return response.success(res, {
+      message: "Google login successful",
+      data: {
+        user: AuthService.getFormattedUser(user),
+      },
+      statusCode: 200,
+      cookie: AuthService.getCookieConfig([
+        {
+          name: "accessToken",
+          value: accessToken,
+          expiration: env.cookieExpirationTime,
+        },
+        {
+          name: "refreshToken",
+          value: refreshToken,
+          expiration: env.cookieExpirationTime,
+        },
+      ]),
+    });
+  } catch (err: any) {
+    return response.error(res, {
+      message: err.message || "An error occurred during Google login",
+      statusCode: 500,
+    });
+  }
+};
+
+export { login, googleLogin, register, verifyAuth, logout, refreshAccessToken };

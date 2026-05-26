@@ -4,6 +4,7 @@ import { verifyToken, generateToken } from "../utils/jwtUtils.js";
 import { env } from "../config/env.js";
 import { RefreshToken } from "../models/refresh-token.js";
 import { AuthService } from "../services/auth.services.js";
+import { compareHash } from "../utils/hashUtils.js";
 
 const verifyAuth = async (req: Request, res: Response, next: NextFunction) => {
   const { accessToken, refreshToken } = req.cookies;
@@ -29,6 +30,10 @@ const verifyAuth = async (req: Request, res: Response, next: NextFunction) => {
         return response.error(res, {
           message: "No active session found. Please login.",
           statusCode: 401,
+          cookie: AuthService.getLogoutCookieConfig([
+            "accessToken",
+            "refreshToken",
+          ]),
         });
       }
 
@@ -36,7 +41,14 @@ const verifyAuth = async (req: Request, res: Response, next: NextFunction) => {
       payload = await verifyToken(refreshToken, env.refreshTokenSecret);
 
       // Stateful check: ensure session exists in DB
-      const activeSession = await RefreshToken.findOne({ refreshToken });
+      const sessions = await RefreshToken.find({ userId: payload.id });
+      let activeSession = null;
+      for (const session of sessions) {
+        if (await compareHash(refreshToken, session.refreshToken)) {
+          activeSession = session;
+          break;
+        }
+      }
 
       if (!activeSession) {
         return response.error(res, {
@@ -51,7 +63,7 @@ const verifyAuth = async (req: Request, res: Response, next: NextFunction) => {
 
       // Issue a new Access Token and set it as a cookie
       const newAccessToken = await generateToken(
-        { id: payload.id, email: payload.email, role: payload.role },
+        { id: payload.id, email: payload.email },
         env.accessTokenSecret,
         env.accessTokenExpiration
       );

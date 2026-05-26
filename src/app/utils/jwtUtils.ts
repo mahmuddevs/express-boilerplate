@@ -1,10 +1,8 @@
 import { SignJWT, jwtVerify } from "jose";
-import { env } from "../config/env.js";
 
 export interface TokenPayload {
   id: string;
   email: string;
-  role: string;
 }
 
 export const generateToken = async (

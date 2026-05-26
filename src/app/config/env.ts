@@ -19,4 +19,5 @@ export const env = {
   refreshTokenExpiration: process.env.REFRESH_TOKEN_EXPIRATION || '7d',
   cookieExpirationTime: process.env.REFRESH_TOKEN_EXPIRATION || '7d',
   hashSaltRounds: Number(process.env.HASH_SALT_ROUNDS || 10),
+  googleClientId: required("GOOGLE_CLIENT_ID"),
 };
