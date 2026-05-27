@@ -155,9 +155,13 @@ const verifyAuth = async (req: Request, res: Response) => {
   const { accessToken, refreshToken } = req.cookies;
 
   if (!accessToken) {
-    return response.error(res, {
+    return response.success(res, {
       message: "Authentication token missing",
-      statusCode: 401,
+      data: {
+        user: null,
+        isGuest: true,
+      },
+      statusCode: 200,
     });
   }
 
@@ -255,7 +259,7 @@ const refreshAccessToken = async (req: Request, res: Response) => {
   try {
     const payload = await verifyToken(refreshToken, env.refreshTokenSecret);
     const sessions = await RefreshToken.find({ userId: payload.id });
-    
+
     let session = null;
     for (const s of sessions) {
       if (await compareHash(refreshToken, s.refreshToken)) {
