@@ -1,12 +1,12 @@
 import type { Request, Response } from "express";
-import { User } from "../models/user.js";
-import { response } from "../utils/apiResponse.js";
-import { AuthService } from "../services/auth.services.js";
-import { compareHash } from "../utils/hashUtils.js";
-import { generateToken, verifyToken } from "../utils/jwtUtils.js";
+import { User } from "./user.model.js";
+import { response } from "../../utils/apiResponse.js";
+import { AuthService } from "./auth.service.js";
+import { compareHash } from "../../utils/hashUtils.js";
+import { generateToken, verifyToken } from "../../utils/jwtUtils.js";
 import { decodeJwt } from "jose";
-import { env } from "../config/env.js";
-import { RefreshToken } from "../models/refresh-token.js";
+import { env } from "../../config/env.js";
+import { RefreshToken } from "./refresh-token.model.js";
 import { OAuth2Client } from "google-auth-library";
 
 
@@ -155,13 +155,9 @@ const verifyAuth = async (req: Request, res: Response) => {
   const { accessToken, refreshToken } = req.cookies;
 
   if (!accessToken) {
-    return response.success(res, {
+    return response.error(res, {
       message: "Authentication token missing",
-      data: {
-        user: null,
-        isGuest: true,
-      },
-      statusCode: 200,
+      statusCode: 401,
     });
   }
 
@@ -202,7 +198,7 @@ const verifyAuth = async (req: Request, res: Response) => {
     });
   } catch (err: any) {
     return response.error(res, {
-      message: err.message || "Invalid token",
+      message: "Token is invalid or expired.",
       statusCode: 401,
     });
   }
@@ -219,20 +215,16 @@ const logout = async (req: Request, res: Response) => {
   }
 
   try {
-    try {
-      const payload = decodeJwt(refreshToken);
-      const userId = payload.id;
-      if (userId) {
-        const sessions = await RefreshToken.find({ userId });
-        for (const session of sessions) {
-          if (await compareHash(refreshToken, session.refreshToken)) {
-            await RefreshToken.deleteOne({ _id: session._id });
-            break;
-          }
+    const payload = decodeJwt(refreshToken);
+    const userId = payload.id;
+    if (userId) {
+      const sessions = await RefreshToken.find({ userId });
+      for (const session of sessions) {
+        if (await compareHash(refreshToken, session.refreshToken)) {
+          await RefreshToken.deleteOne({ _id: session._id });
+          break;
         }
       }
-    } catch {
-      // Ignore if decoding fails
     }
 
     return response.success(res, {
@@ -248,7 +240,7 @@ const logout = async (req: Request, res: Response) => {
 }
 
 const refreshAccessToken = async (req: Request, res: Response) => {
-  const { accessToken, refreshToken } = req.cookies;
+  const { refreshToken, accessToken } = req.cookies;
   const logout = AuthService.getLogoutCookieConfig(["accessToken", "refreshToken"]);
 
   // 1. First check if the session is active or not
@@ -256,8 +248,39 @@ const refreshAccessToken = async (req: Request, res: Response) => {
     return response.error(res, { message: "Session expired", statusCode: 401, cookie: logout });
   }
 
+  // 2. If the access token is still valid and not expired, return it as-is without rotating
+  if (accessToken) {
+    try {
+      await verifyToken(accessToken, env.accessTokenSecret);
+      return response.success(res, {
+        message: "Access token is still valid",
+        cookie: AuthService.getCookieConfig([
+          {
+            name: "accessToken",
+            value: accessToken,
+            expiration: env.cookieExpirationTime,
+          },
+        ]),
+      });
+    } catch {
+      // Access token is invalid or expired, proceed with refresh
+    }
+  }
+
+  // 2. Verify the refresh token signature
+  let payload;
   try {
-    const payload = await verifyToken(refreshToken, env.refreshTokenSecret);
+    payload = await verifyToken(refreshToken, env.refreshTokenSecret);
+  } catch {
+    return response.error(res, {
+      message: "Invalid or expired session",
+      statusCode: 401,
+      cookie: logout,
+    });
+  }
+
+  try {
+    // 3. Stateful check: confirm the session still exists in the DB
     const sessions = await RefreshToken.find({ userId: payload.id });
 
     let session = null;
@@ -268,27 +291,42 @@ const refreshAccessToken = async (req: Request, res: Response) => {
       }
     }
 
-    if (!session) throw new Error("Revoked");
-
-    // 2. Access token ones
-    if (!accessToken) {
-      return response.error(res, { message: "Access token missing", statusCode: 401, cookie: logout });
+    if (!session) {
+      return response.error(res, {
+        message: "Session has been revoked. Please login again.",
+        statusCode: 401,
+        cookie: logout,
+      });
     }
 
-    try {
-      await verifyToken(accessToken, env.accessTokenSecret);
-      return response.success(res, { message: "Token still valid" });
-    } catch (err: any) {
-      if (err.code !== "ERR_JWT_EXPIRED" && err.name !== "JWTExpired") {
-        return response.error(res, { message: "Invalid session", statusCode: 401, cookie: logout });
-      }
+    // 4. Ensure the user still exists before minting new tokens
+    const user = await AuthService.findUserByEmail(payload.email);
+    if (!user) {
+      return response.error(res, {
+        message: "User no longer exists. Please login again.",
+        statusCode: 401,
+        cookie: logout,
+      });
     }
 
+    // 5. Rotate tokens: issue new tokens and revoke the old refresh token
     const newAccessToken = await generateToken(
       { id: payload.id, email: payload.email },
       env.accessTokenSecret,
       env.accessTokenExpiration
     );
+
+    const newRefreshToken = await generateToken(
+      { id: payload.id, email: payload.email },
+      env.refreshTokenSecret,
+      env.refreshTokenExpiration
+    );
+
+    await RefreshToken.deleteOne({ _id: session._id });
+    await RefreshToken.create({
+      userId: user._id,
+      refreshToken: newRefreshToken,
+    });
 
     return response.success(res, {
       message: "Token refreshed",
@@ -298,13 +336,17 @@ const refreshAccessToken = async (req: Request, res: Response) => {
           value: newAccessToken,
           expiration: env.cookieExpirationTime,
         },
+        {
+          name: "refreshToken",
+          value: newRefreshToken,
+          expiration: env.cookieExpirationTime,
+        },
       ]),
     });
-  } catch {
+  } catch (err: any) {
     return response.error(res, {
-      message: "Session invalid",
-      statusCode: 401,
-      cookie: logout,
+      message: err.message || "An error occurred during token refresh",
+      statusCode: 500,
     });
   }
 };

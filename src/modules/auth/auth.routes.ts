@@ -1,8 +1,8 @@
 import { Router } from "express";
 import type { Request, Response } from "express";
-import { UserSchema, LoginSchema } from "../../schemas/user.schema.js";
+import { UserSchema, LoginSchema } from "./user.schema.js";
 import { validate } from "../../middlewares/validate.middleware.js";
-import { login, logout, register, verifyAuth, refreshAccessToken, googleLogin } from "../../controllers/auth.controller.js";
+import { login, logout, register, verifyAuth, refreshAccessToken, googleLogin } from "./auth.controller.js";
 
 const authRoutes = Router();
 

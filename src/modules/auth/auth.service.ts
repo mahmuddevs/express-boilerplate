@@ -1,6 +1,6 @@
 import type { Document } from "mongoose";
-import { User, type IUser } from "../models/user.js";
-import { env } from "../config/env.js";
+import { User, type IUser } from "./user.model.js";
+import { env } from "../../config/env.js";
 import ms from "ms";
 import type { StringValue } from "ms"
 

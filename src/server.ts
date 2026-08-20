@@ -3,8 +3,8 @@ import dns from "node:dns";
 dns.setServers(["1.1.1.1", "8.8.8.8"]);
 
 import app from "./app.js";
-import { env } from "./app/config/env.js";
-import connectDB from "./app/config/db-config.js";
+import { env } from "./config/env.js";
+import connectDB from "./config/db-config.js";
 
 const PORT = env.port;
 

@@ -1,5 +1,5 @@
 import type { Document } from "mongoose";
-import type { IUser } from "../models/user.js";
+import type { IUser } from "../modules/auth/user.model.ts";
 
 declare global {
   namespace Express {

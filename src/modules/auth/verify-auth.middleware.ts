@@ -1,10 +1,10 @@
 import type { Request, Response, NextFunction } from "express";
-import { response, handleCookies } from "../utils/apiResponse.js";
-import { verifyToken, generateToken } from "../utils/jwtUtils.js";
-import { env } from "../config/env.js";
-import { RefreshToken } from "../models/refresh-token.js";
-import { AuthService } from "../services/auth.services.js";
-import { compareHash } from "../utils/hashUtils.js";
+import { response, handleCookies } from "../../utils/apiResponse.js";
+import { verifyToken, generateToken } from "../../utils/jwtUtils.js";
+import { env } from "../../config/env.js";
+import { RefreshToken } from "./refresh-token.model.js";
+import { AuthService } from "./auth.service.js";
+import { compareHash } from "../../utils/hashUtils.js";
 
 const verifyAuth = async (req: Request, res: Response, next: NextFunction) => {
   const { accessToken, refreshToken } = req.cookies;

@@ -1,5 +1,5 @@
 import { model, Schema, Types } from "mongoose";
-import { hashData } from "../utils/hashUtils.js";
+import { hashData } from "../../utils/hashUtils.js";
 
 const refreshTokenSchema = new Schema({
   userId: {

@@ -1,5 +1,5 @@
 import { Schema, model } from "mongoose";
-import { hashData } from "../utils/hashUtils.js";
+import { hashData } from "../../utils/hashUtils.js";
 
 export interface IUser {
   firstName: string;

@@ -1,6 +1,6 @@
 import { Router } from "express";
-import verifyAuth from "../middlewares/verify-auth.middleware.js";
-import { response } from "../utils/apiResponse.js";
+import verifyAuth from "../auth/verify-auth.middleware.js";
+import { response } from "../../utils/apiResponse.js";
 
 const rootRoutes = Router();
 

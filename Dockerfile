@@ -1,6 +1,6 @@
-FROM oven/bun:latest
+FROM oven/bun:canary
 
-WORKDIR /express-boilerplate
+WORKDIR /app
 
 COPY package.json bun.lock ./
 

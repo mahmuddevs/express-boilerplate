@@ -3,9 +3,9 @@ import type { NextFunction, Request, Response } from "express";
 import morgan from "morgan";
 import cors from "cors";
 import cookieParser from "cookie-parser";
-import { logger } from "./app/utils/logger.js";
-import { response } from "./app/utils/apiResponse.js";
-import router from "./app/routes/routes.js";
+import { logger } from "./utils/logger.js";
+import { response } from "./utils/apiResponse.js";
+import router from "./routes/index.js";
 
 const app = express();
 
